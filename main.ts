@@ -34,6 +34,10 @@ import {
     BACnetStack_AddDevice,
     BACnetStack_AddNetworkPortObject,
     BACnetStack_AddObject,
+    BACnetStack_GetAPIMajorVersion,
+    BACnetStack_GetAPIMinorVersion,
+    BACnetStack_GetAPIPatchVersion,
+    BACnetStack_GetAPIBuildVersion,
     BACnetStack_RegisterCallbackGetPropertyBool,
     BACnetStack_RegisterCallbackGetPropertyCharacterString,
     BACnetStack_RegisterCallbackGetPropertyEnumerated,
@@ -107,7 +111,7 @@ import { SimpleUDP } from "./common/SimpleUDP";
 // instance (it must be unique on the whole BACnet internetwork).
 
 const APP_NAME = "BACnet B-SS (Smart Sensor) Example - Node";
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 
 // Every example in this series has its own default device instance (B-SS =
 // 389001, see the series' device-instance table) so several examples can run
@@ -128,10 +132,14 @@ const DEVICE_DESCRIPTION =
     "Demonstrates DS-RP-B: ReadProperty plus Who-Is/I-Am with read-only sensor objects."; // replace with your product's description.
 const VENDOR_NAME = "Chipkin Automation Systems"; // replace with your company's name.
 const MODEL_NAME = "CAS BACnet Stack Example - B-SS"; // replace with your product's model name.
-// Firmware_Revision / Application_Software_Version - your real versions. Wire
-// them to your build rather than hard-coding a number that will go stale.
-const FIRMWARE_REVISION = "1.0.0";
-const APPLICATION_SOFTWARE_VERSION = "1.0.0";
+// Firmware_Revision / Application_Software_Version - your real versions.
+// Application_Software_Version is this app's own version (one source of
+// truth: APP_VERSION, the same constant --version prints). Firmware_Revision
+// names the underlying CAS BACnet Stack, not this app - it is computed once
+// at startup (see main()) from the stack's own real version numbers, not
+// hard-coded.
+const APPLICATION_SOFTWARE_VERSION = APP_VERSION;
+let g_firmwareRevision = "";
 
 // Object instances - instances start at 1 in every example of this series.
 const ANALOG_INPUT_INSTANCE = 1; //      "Bronze"     - room temperature, read-only
@@ -477,7 +485,7 @@ function GetPropertyCharacterString(
             return text(MODEL_NAME);
         }
         if (propertyIdentifier === PROPERTY_IDENTIFIER_FIRMWARE_REVISION) {
-            return text(FIRMWARE_REVISION);
+            return text(g_firmwareRevision);
         }
         if (propertyIdentifier === PROPERTY_IDENTIFIER_APPLICATION_SOFTWARE_VERSION) {
             return text(APPLICATION_SOFTWARE_VERSION);
@@ -501,6 +509,9 @@ async function main(): Promise<void> {
         console.error(`Error: failed to load the CAS BACnet Stack: ${CASBACnetStackAdapter_LastError()}`);
         process.exit(1);
     }
+    g_firmwareRevision =
+        `${BACnetStack_GetAPIMajorVersion()}.${BACnetStack_GetAPIMinorVersion()}.` +
+        `${BACnetStack_GetAPIPatchVersion()}.${BACnetStack_GetAPIBuildVersion()}`;
 
     if (HandleHelpAndVersionArgs(argv, APP_NAME, APP_VERSION)) {
         return;
