@@ -111,7 +111,7 @@ import { SimpleUDP } from "./common/SimpleUDP";
 // instance (it must be unique on the whole BACnet internetwork).
 
 const APP_NAME = "BACnet B-SS (Smart Sensor) Example - Node";
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.2";
 
 // Every example in this series has its own default device instance (B-SS =
 // 389001, see the series' device-instance table) so several examples can run
@@ -126,7 +126,7 @@ const VENDOR_IDENTIFIER = 389; // Chipkin Automation Systems - replace with the 
 // example; a real product must make it per-unit configurable (serial
 // number, DIP switches, a config file, or a --deviceName argument) so two
 // units never boot with the same name.
-const DEVICE_NAME = "Rainbow"; // replace with your product's per-unit device name.
+const DEVICE_NAME = "Chipkin Example B-SS"; // replace with your product's per-unit device name.
 const DEVICE_DESCRIPTION =
     "Chipkin CAS BACnet Stack example - B-SS (Smart Sensor) profile. " +
     "Demonstrates DS-RP-B: ReadProperty plus Who-Is/I-Am with read-only sensor objects."; // replace with your product's description.
