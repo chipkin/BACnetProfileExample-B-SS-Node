@@ -20,8 +20,34 @@ mistake in this example is silent, and the section it lives in is
 The example is intentionally small so it's easy to change.
 
 **Change a sensor's value or name** - edit the constants / callbacks in
-`main.ts` (e.g. `g_analogInput1Value`, or the `"Bronze"` string in
-`GetPropertyCharacterString`).
+`main.ts` (e.g. the Simulation's range and rates in section 2, or the
+`"Bronze"` string in `GetPropertyCharacterString`).
+
+**Replace the Simulation with your hardware** - section 2 of `main.ts`
+(`SensorSimulationTick()`) is the only code that changes the sensor values; the
+`GetProperty*` callbacks just hand back `g_analogInput1Value`,
+`g_binaryInput1Value` and `g_multiStateInput1Value`. Replace the function body
+with your own sampling and keep the callbacks as they are. Sample on a timer and
+only *store* the result: the callbacks run inside `BACnetStack_Tick()`, on the
+one Node.js thread, so a callback that waits for an ADC conversion or an I2C
+transaction (or a synchronous file read) delays every BACnet request. Delete
+`SENSOR_FAULT_FILE_VARIABLE` and its environment-variable code - it is a test
+hook, not something to ship.
+
+**Report a sensor fault** - `Reliability` is how a BACnet sensor says "do not
+trust this reading" (cl. 12.2.9). It is optional, so it takes two steps: enable
+it with `BACnetStack_SetPropertyEnabled(... PROPERTY_IDENTIFIER_RELIABILITY ...)`
+and serve it from `GetPropertyEnumerated`. The stack then builds the FAULT bit of
+`Status_Flags` from it by itself (cl. 12.2.7) - you never serve `Status_Flags`.
+Once it is enabled, **always** answer it: the stack reads `Reliability` through
+your callback every time a client reads `Status_Flags`, and a callback that
+declines does not fail loudly - the stack substitutes the datatype default, `0`,
+which is `no-fault-detected`. A forgotten branch therefore reports a healthy
+sensor forever, with FAULT never set. (`failure_modes_test.py` is what catches
+that: it breaks the sensor and expects the fault.) Set it from your hardware's
+own diagnostics - `open-loop` (4) for a broken wire, `shorted-loop` (5),
+`over-range` (2) / `under-range` (3) for a reading on the rails, `no-sensor` (1)
+for a sensor that stopped answering.
 
 **Change the device identity before you ship** - vendor ID, vendor name,
 model name, description, firmware revision and device name are all in the
@@ -177,6 +203,7 @@ property?" For Analog Input 1, the whole picture:
 | `Present_Value` | **you** | `GetPropertyReal` |
 | `Object_Name` | **you** | `GetPropertyCharacterString` |
 | `Units` | **you** | `GetPropertyEnumerated` |
+| `Reliability` *(optional, enabled)* | **you** | `GetPropertyEnumerated` - the stack derives `Status_Flags` FAULT from it |
 
 Every object, not just this one, is in [docs/PICS.md](docs/PICS.md).
 
@@ -221,6 +248,9 @@ rather than against "it looked fine in the explorer":
    callback, so the stack has nothing to consult and declines on its own.
 5. Read `State_Text[4]` on Multi-State Input 1 (which only has 3 states) and
    confirm `invalid-array-index`, not an empty string.
+6. Run the Wire Tests (`python tests/run_wire_tests.py`, see
+   [tests/README.md](tests/README.md)). Steps 2, 4 and 5 are automated there,
+   with the Simulation and the broken-wire Failure Mode on top.
 
 ### Keeping the PICS honest
 
@@ -249,11 +279,12 @@ feature.
 
 | Symptom | Cause / fix |
 |---------|-------------|
-| On start-up the app prints two red `Error:` lines but the device works | **Expected - this is not your bug.** Two benign sources, both from the stack's own debug logging: (1) the device receives its **own** broadcast I-Am and logs a decode cascade - any BACnet/IP device that listens for broadcasts hears itself; (2) a one-time *"UUID has not been set. A UUID must be set for the BACnetSC device to start."* - the stack starts a BACnet/SC datalink this IP-only example never configures. It appears once and does not spam. |
-| `npm install` fails with `MSB...` / `unknown version undefined` on Windows | The stack's supported Windows toolset is Visual Studio 2022 (v143) Build Tools. A newer Visual Studio release is not detected correctly by node-gyp. Install VS 2022 Build Tools with the "Desktop development with C++" workload. |
+| On start-up the console shows an `RX ... I-Am` line right after the device's own `TX ... I-Am` | **Expected.** The device hears its own broadcast I-Am - any BACnet/IP device that listens for broadcasts does. The stack ignores it. (This example builds the stack's production addon, which has no debug logging; a test-tool build of the addon also prints the stack's own `Error:` lines for it.) |
+| `npm install` fails with `gyp ERR! find VS unknown version "undefined"` on Windows | npm builds the addon with the node-gyp it bundles; node-gyp 11 does not recognise Visual Studio 2026. Node 24.21's own npm (11.19, node-gyp 12) does - do not downgrade npm. Visual Studio 2022 Build Tools with the "Desktop development with C++" workload also works. |
 | `npm install` fails to find a C++ compiler on Linux/macOS | Install a C++17 toolchain first: `sudo apt install build-essential python3 git` (Debian/Ubuntu) or `xcode-select --install` (macOS). |
 | First `npm install` seems stuck for minutes | Normal - node-gyp is compiling the whole stack into a native addon. Only the first install (or one after `submodules/cas-bacnet-stack` changes) is slow. |
-| `Cannot find module '@chipkin/cas-bacnet-stack'` when running `npm start` | The npm workspace link (`node_modules/@chipkin/cas-bacnet-stack`) is missing or stale - often left over from a different clone path. Run `npm install` again from this repository's root so npm relinks the workspace. |
-| App prints *"could not bind UDP port 47808"* | Another BACnet program is already using 47808. Stop it, or run with `--port <n>`. |
+| `Cannot find module '@chipkin/cas-bacnet-stack'` (or `Cannot find module 'node-addon-api'` during `npm install`) | The npm workspace link (`node_modules/@chipkin/cas-bacnet-stack`) is missing or stale - often left over from a different clone path. Delete `node_modules/` and `package-lock.json` changes, then run `npm install` again from this repository's root so npm relinks the workspace. |
+| App prints *"Failed to bind UDP port 47808"* | Another BACnet program is already using 47808. Stop it, or run with `--port <n>`. |
 | Client sends Who-Is but sees no I-Am | Firewall is blocking UDP 47808, or the client and device are on different subnets (Who-Is is a broadcast). Allow the port; test on the same subnet first. |
 | A WriteProperty you sent is rejected | Correct behaviour - this device is read-only. There is no `RegisterCallbackSetProperty*` call anywhere in `main.ts`; the stack declines every write without consulting the application. |
+| `Cannot find module ... dist/main.js` | Build first: `npm run build` (compiles `main.ts` to `dist/`). |

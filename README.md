@@ -1,28 +1,35 @@
 # BACnet B-SS (Smart Sensor) - Node.js example
 
 A minimal, copy-paste-friendly example showing how to implement the BACnet
-**B-SS (Smart Sensor)** device profile in TypeScript on Node.js, using the
+**B-SS (BACnet Smart Sensor)** device profile in TypeScript on Node.js, using the
 [CAS BACnet Stack](https://store.chipkin.com/services/stacks/bacnet-stack). It
-listens on **BACnet/IP (UDP 47808)**, answers **ReadProperty**, and is
-discoverable via **Who-Is / I-Am**.
+listens on **BACnet/IP (UDP 47808)**, answers **ReadProperty** requests, and is
+discoverable via **Who-Is / I-Am**. Its three sensor readings change over time
+the way real ones do, and a broken sensor shows up as a **fault** a client can
+read. The sensors themselves are a [Simulation](#the-sensor-simulation);
+everything BACnet does with their readings is real.
+
+It is the Node.js edition of
+[BACnetProfileExample-B-SS-CPP](https://github.com/chipkin/BACnetProfileExample-B-SS-CPP):
+the same device, the same objects and properties, the same Simulation and the
+same Wire Tests - a client cannot tell the two apart on the wire.
 
 **[Tagged source releases](https://github.com/chipkin/BACnetProfileExample-B-SS-Node/releases)**
-- there is no prebuilt binary to download; `npm install` always compiles the
-CAS BACnet Stack addon locally (see [Build](#build) below).
+- there is no prebuilt binary to download; `npm install` compiles the CAS BACnet
+Stack addon locally (see [Build](#build) below).
 
 - **[TUTORIAL.md](TUTORIAL.md)** - how to extend this example and how to review
   it for conformance. Read it when you start turning this into your own device.
 - **[docs/PICS.md](docs/PICS.md)** - the Protocol Implementation Conformance
   Statement: every object, every property, and who answers it.
 
-> **Versions:** this document describes **example v1.0.0**, built and verified
-> against the CAS BACnet Stack submodule pinned at `6.x`, at
-> **Protocol_Revision 24**, with the vendored Node `common/` helper at
-> **v2.0.0**. Running the example prints the app and API versions - if what it
-> prints disagrees with this line, trust the program and check `CHANGELOG.md`.
-> It does not print Protocol_Revision or the common helper version; read the
-> former back with ReadProperty and check `common/CHANGELOG.md` for the
-> latter.
+> **Versions:** this document describes **example v1.1.0**, built and verified
+> against **CAS BACnet Stack 6.0.23** (`6.x` @ `64b2cfac5`; its Node package
+> `@chipkin/cas-bacnet-stack` 6.1.2, built as the production addon), at
+> **Protocol_Revision 30**, with the vendored Node `common/` helper at
+> **v3.0.0**, on **Node.js 24.21**. Running the example prints the example,
+> stack and `common/` versions - if what it prints disagrees with this line,
+> trust the program and check `CHANGELOG.md`.
 
 ## What is the B-SS (Smart Sensor) profile?
 
@@ -44,7 +51,7 @@ must expose all of its **required properties**. The CAS BACnet Stack
 generates most of those automatically (Object_Identifier, Object_Type,
 Status_Flags, Object_List, Protocol_*, ...); this example supplies the
 handful that are application-specific. The result is conformant for
-**Protocol_Revision 24**. [docs/PICS.md](docs/PICS.md) lists every property
+**Protocol_Revision 30**. [docs/PICS.md](docs/PICS.md) lists every property
 and who answers it.
 
 ## The device this example creates
@@ -52,18 +59,68 @@ and who answers it.
 ```
 Device 389001  "Chipkin Example B-SS"   (Vendor 389 - Chipkin Automation Systems)
     │
-    ├── Analog Input 1       "Bronze"      Present_Value  21.5     (REAL, degrees Celsius; read-only)
-    ├── Binary Input 1       "Emerald"     Present_Value  inactive (read-only)
-    ├── Multi-State Input 1  "Hot Pink"    Present_Value  1        (state 1..3; read-only)
+    ├── Analog Input 1       "Bronze"      Present_Value  21.5 -> ramps 18.0 .. 26.0  (REAL, degrees Celsius)
+    ├── Binary Input 1       "Emerald"     Present_Value  toggles every 3 s     (0 = inactive / 1 = active)
+    ├── Multi-State Input 1  "Hot Pink"    Present_Value  1 -> 2 -> 3 every 4 s (state, 1..3)
     └── Network Port 1       "Vermilion"   the BACnet/IP port     (required on every device)
 ```
 
+## The scenario: a sensor a controller reads
+
+What a B-SS is for, in one sentence, from Annex L.4.5 of ANSI/ASHRAE 135-2024:
+*"Ability to provide values for any of its BACnet objects upon request."* A
+controller or workstation (the **Peer** - any BACnet client, or the Python
+client in [`tests/`](tests/README.md)) reads the sensor and gets what it is
+measuring **now**:
+
+1. The Peer finds the sensor with **Who-Is** and reads its `Object_List`.
+2. It reads Analog Input 1 `Present_Value` - say `22.0` - and again a few
+   seconds later - `23.5`. The reading follows the (simulated) room temperature,
+   0.5 C a second. Binary Input 1 and Multi-State Input 1 change too.
+3. **Failure Mode - a broken sensor.** When the sensor wire breaks, the device
+   does not keep handing out a number as if nothing happened: Analog Input 1
+   `Reliability` reads `open-loop` (4) and the **FAULT** bit of `Status_Flags`
+   is TRUE - clause 12.2.7: FAULT is *"Logical TRUE (1) if the Reliability
+   property is present and does not have a value of NO_FAULT_DETECTED"*. The
+   reading stops changing. Repair the wire and `Reliability` returns to
+   `no-fault-detected`, FAULT clears, and the reading moves again.
+4. **Failure Mode - a request it cannot serve.** Reading an object or property
+   the sensor does not have, or an array element past the end, gets the error
+   clause 15.5.1.3.1 names (`unknown-object`, `unknown-property`,
+   `invalid-array-index`); a WriteProperty gets a **Reject**
+   `unrecognized-service`, because a B-SS is read-only.
+
+### The sensor Simulation
+
+A real smart sensor samples a thermistor, a contact and a selector switch. This
+example has none of them, so it **simulates** them - non-BACnet scaffolding,
+outside the BACnet Surface, in section 2 of [`main.ts`](main.ts)
+(`SensorSimulationTick()`, run beside `BACnetStack_Tick()`). Once a second:
+
+- the **temperature** (Analog Input 1) moves 0.5 C, ramping up to 26.0 and back
+  down to 18.0;
+- the **contact** (Binary Input 1) toggles every 3 s;
+- the **selector** (Multi-State Input 1) steps 1 -> 2 -> 3 -> 1 every 4 s.
+
+The **broken wire** is a test-only hook, not a feature: if the environment
+variable `CAS_EXAMPLE_TEST_SENSOR_FAULT_FILE` names a file, the wire counts as
+broken for as long as that file exists. The Wire Tests create and delete it.
+Nothing on the network can break the sensor.
+
+To port the example to hardware, replace `SensorSimulationTick()` with your own
+sampling (on a timer - never block the BACnet callbacks on slow I/O), and set
+`Reliability` from your hardware's own diagnostics.
+
 ## What this example supports
 
-The example implements exactly the capabilities below - and nothing more,
-which is the point of a profile example.
+The example implements exactly the capabilities below - and nothing more, which
+is the point of a profile example.
 
 ### BIBBs (BACnet Interoperability Building Blocks)
+
+These three are what the B-SS profile requires, and they are what this example
+implements. DS-RP-B is the profile's defining BIBB; the two DM BIBBs make the
+device discoverable.
 
 | BIBB | Description | Supported |
 |------|-------------|:---------:|
@@ -86,7 +143,7 @@ which is the point of a profile example.
 | Device | 389001 | Chipkin Example B-SS |
 | Analog Input | 1 | Bronze |
 | Binary Input | 1 | Emerald |
-| Multi-state Input | 1 | Hot Pink |
+| Multi-State Input | 1 | Hot Pink |
 | Network Port | 1 | Vermilion |
 
 Every required property of every object, and who answers it, is in
@@ -97,10 +154,11 @@ Every required property of every object, and who answers it, is in
 This example **builds against the CAS BACnet Stack, which is a commercial
 Chipkin product** - it is not free or open source, and there is no
 public/trial build. The stack is referenced here as the **private** git
-submodule `submodules/cas-bacnet-stack` (tracking the `6.x` branch) and
-consumed as an **npm workspace**: `npm install` compiles it from source and
-builds the package's TypeScript layer. You can only fetch and build it once
-you have a CAS BACnet Stack license and access to that repository.
+submodule `submodules/cas-bacnet-stack` (pinned to `6.x` @ `64b2cfac5`) and
+consumed as an **npm workspace**: `npm install` compiles it from source into a
+native Node addon and builds the package's TypeScript layer. You can only fetch
+and build it once you have a CAS BACnet Stack license and access to that
+repository.
 
 **To get the CAS BACnet Stack (and access to build this example), contact
 Chipkin:** <https://store.chipkin.com/services/stacks/bacnet-stack> or
@@ -113,27 +171,38 @@ This is a **self-contained** project. It ships:
 - `main.ts` - the example device.
 - `common/` - the shared Node.js helper (UDP, callbacks, CLI, keyboard)
   vendored in.
-- `package.json` / `tsconfig.json` - the build, the same on Windows, Linux,
-  and macOS.
+- `package.json` / `tsconfig.json` / `.npmrc` - the build, the same on Windows,
+  Linux and macOS. `.npmrc` sets `bacnet_testtool=0`, so `npm install` builds the
+  stack's **production** addon: the customer interface only, no test-tool
+  exports.
+- `tests/` - the Wire Tests, and `wiretest/` - the series' shared Python
+  Wiretest Harness they are written against (vendored).
 - `docs/PICS.md` - the conformance statement.
 - `docs/objects.json` - the input to the objects-and-properties generator.
 - `submodules/cas-bacnet-stack/` - the **CAS BACnet Stack as a git submodule**
   (private; requires a license - see above), consumed as an npm workspace. Its
-  sources compile into a native Node addon, so there is nothing to build, ship,
-  or install separately.
+  sources compile into a native Node addon, so there is no separate library to
+  build, ship, or install. The Node adapter is used in place from the submodule
+  (`submodules/cas-bacnet-stack/adapters/node/`); nothing of it is copied here.
+
+The stack binary - the addon `cas-bacnet-stack.node`, written to
+`submodules/cas-bacnet-stack/build/Release/` - is **never committed and never
+released**: `.gitignore` covers it, and a tagged release carries source only.
+Build it yourself from the submodule with `npm install`.
 
 ## Prerequisites
 
-- Node.js `>=18.20.8 <=24.x` and npm.
+- **Node.js 24.21 or a later 24.x**, with its npm (11.x). The stack's Node
+  package requires `>=24.21.0 <25`.
 - A C++17 toolchain (node-gyp needs it to compile the stack addon).
-- Git (to fetch the stack submodule).
+- Git (to fetch the stack submodule), and Python 3 for the Wire Tests.
 
 ### Windows
 
-- **Build tools** - Visual Studio 2022 Build Tools with the **"Desktop
-  development with C++"** workload, plus Python (the standard node-gyp
-  prerequisites). Newer Visual Studio versions are not supported by the
-  stack's current toolset.
+- **Build tools** - Visual Studio 2022 or 2026 (or their Build Tools) with the
+  **"Desktop development with C++"** workload, plus Python (the standard
+  node-gyp prerequisites). Node 24.21's own npm (11.19, node-gyp 12) finds
+  Visual Studio 2026 by itself; no `msvs_version` setting is needed.
 - Use a short project path - the stack's MSVC intermediate paths mirror its
   source tree, and long paths can fail to compile.
 
@@ -144,21 +213,26 @@ This is a **self-contained** project. It ships:
 
 ## Build
 
-npm only, and the same two commands on every platform:
+npm only, and the same commands on every platform:
 
 ```bash
 git clone --recursive https://github.com/chipkin/BACnetProfileExample-B-SS-Node.git
 cd BACnetProfileExample-B-SS-Node
 
-npm install
+npm install        # compiles the CAS BACnet Stack addon (production build)
+npm run build      # compiles main.ts and common/ to dist/
 ```
 
 Already cloned without `--recursive`? Run `git submodule update --init --recursive`
 first - the install needs the stack submodule.
 
-> **The first `npm install` takes 10-20 minutes** - it compiles the entire CAS
-> BACnet Stack into a native Node addon via node-gyp. Subsequent installs are
-> much faster once the addon is built.
+> **The first `npm install` takes a few minutes** (about 3 on a 12-core Windows
+> machine): it compiles the entire CAS BACnet Stack into a native Node addon via
+> node-gyp. npm prints `Unknown project config "bacnet_testtool"` on every run -
+> that is npm noticing the `.npmrc` setting it hands on to the stack's build, not
+> an error. To confirm which addon you built:
+> `node -e "const s=require('@chipkin/cas-bacnet-stack');s.LoadBACnetFunctions();console.log(s.IsTestToolBuild())"`
+> prints `false` for the production build.
 
 ## Run
 
@@ -169,22 +243,21 @@ npm start -- --deviceID 12345  # your own device instance
 npm start -- --help
 ```
 
-Expected output:
+`npm start` runs `node dist/main.js`; run `npm run build` again after editing
+`main.ts`. Expected output:
 
 ```
-BACnet B-SS (Smart Sensor) Example - Node v1.0.0
-CAS BACnet Stack v6.0.21.0
-FYI: listening on <your-ip>:47808 (broadcast <your-subnet-broadcast>)
+BACnet B-SS (Smart Sensor) Example - Node v1.1.0
+CAS BACnet Stack version: 6.0.23.0
+Common helper (common/) version: 3.0.0
+FYI: Listening for BACnet/IP on UDP port 47808 (Network Port 1).
+TX 21 bytes to <your-subnet-broadcast>:47808 (broadcast) (Network Port 1) - Unconfirmed: I-Am
 FYI: Device 389001 ("Chipkin Example B-SS") ready. Vendor ID 389. Press 'h' for help.
 ```
 
-The device listens on UDP **47808** (BACnet/IP) by default. Allow that port
-through your firewall. To use a different port, pass `--port`.
-
-> **Two red `Error:` lines at start-up are expected and are not your bug** -
-> the stack's own debug logging (the device hearing its own broadcast I-Am,
-> and a one-time BACnet/SC UUID notice). [TUTORIAL.md](TUTORIAL.md#troubleshooting)
-> explains both.
+Every BACnet frame the device receives or sends prints one `RX ...` / `TX ...`
+line. The device listens on UDP **47808** (BACnet/IP) by default. Allow that
+port through your firewall. To use a different port, pass `--port`.
 
 ### Command-line options
 
@@ -193,7 +266,7 @@ through your firewall. To use a different port, pass `--port`.
 | `--port <n>` | `47808` | UDP port to listen on (BACnet/IP). |
 | `--deviceID <n>` | `389001` | The device's BACnet instance number (BACnet requires this to be configurable). |
 | `--help`, `-h` | - | Show usage and exit. |
-| `--version` | - | Print the example and stack versions, then exit. |
+| `--version` | - | Print the example, stack, and `common/` helper versions, then exit. |
 
 ### Interactive commands
 
@@ -203,11 +276,13 @@ While the example runs, these keys are available:
 |-----|--------|
 | `h` | Show the version information and this command list. |
 | `q` | Quit. |
-| up arrow | Increase Analog Input 1 (`Bronze`) by 1.1. |
-| down arrow | Decrease Analog Input 1 (`Bronze`) by 1.1. |
+| up arrow | Nudge the simulated Analog Input 1 (`Bronze`) reading up by 1.1. |
+| down arrow | Nudge the simulated Analog Input 1 (`Bronze`) reading down by 1.1. |
 
-The up/down keys change the live `Present_Value` of the analog input, so a
-client re-reading it sees the new value.
+The up/down keys move the simulated temperature; the Simulation carries on
+ramping from the new value, and a client re-reading it sees the change. When
+stdin is a pipe rather than a terminal the same characters work (`q` quits) -
+that is how the Wire Tests stop the example.
 
 ## Verify
 
@@ -215,25 +290,51 @@ Use a BACnet client such as the
 [**CAS BACnet Explorer**](https://store.chipkin.com/products/tools/cas-bacnet-explorer):
 
 1. **Discover** - send a **Who-Is**. The device replies with **I-Am** from
-   instance **389001** (vendor **389**). It also broadcasts an I-Am at
-   start-up.
+   instance **389001** (vendor **389**). It also broadcasts an I-Am at start-up.
 2. **Browse the object model** - the device shows five objects: the Device
    (`Chipkin Example B-SS`), the three sensors, and the Network Port (`Vermilion`). Reading
-   the Device's `Object_List` returns all five.
+   the Device's `Object_List` returns all five. The Network Port reports real
+   BACnet/IP addressing - `IP_Address`, `IP_Subnet_Mask`, `BACnet_IP_UDP_Port`,
+   and a `MAC_Address` the stack builds from them.
 3. **Read the Device** - ReadProperty `389001` -> `Object_Name` returns
-   `"Chipkin Example B-SS"`; `Protocol_Revision` returns `24`; `Description` returns the
+   `"Chipkin Example B-SS"`; `Protocol_Revision` returns `30`; `Description` returns the
    profile description string.
-4. **Read a sensor** - ReadProperty Analog Input `1` -> `Present_Value`
-   returns `21.5`; `Units` returns `degrees-Celsius`; `Out_Of_Service` returns
-   `false`; `Object_Name` returns `"Bronze"`. Repeat for Binary Input `1`
-   (`"Emerald"`, has `Polarity`) and Multi-State Input `1` (`"Hot Pink"`, has
-   `Number_Of_States` = 3). Every required property of every object is
-   readable.
+4. **Read a sensor** - ReadProperty Analog Input `1` -> `Present_Value` returns
+   the current simulated temperature (`21.5` at start-up, then 0.5 higher each
+   second); read it again and it has moved. `Units` returns `degrees-Celsius`;
+   `Reliability` returns `no-fault-detected`; `Status_Flags` returns all FALSE;
+   `Out_Of_Service` returns `false`; `Object_Name` returns `"Bronze"`. Repeat for Binary Input `1` (`"Emerald"`,
+   has `Polarity`) and Multi-State Input `1` (`"Hot Pink"`, has `Number_Of_States`
+   = 3). Every required property of every object is readable.
 5. **Confirm the profile boundary** - a **WriteProperty** to any object is
    rejected. That is correct: a B-SS Smart Sensor is read-only.
 
 For a property-by-property review against the conformance statement, see
 [TUTORIAL.md](TUTORIAL.md).
+
+## Wire Tests
+
+The checks above, automated: a Python BACnet client (the Peer) drives the running
+example over BACnet/IP from outside it. Python 3 standard library only. They are
+the C++ edition's Wire Tests, unchanged except that `--exe` takes a command line
+(`tests/launch.py`), so they prove the two editions behave the same.
+
+| Script | What it proves |
+|---|---|
+| `discovery_test.py` | Who-Is, the Device's `Object_List`, then for every object its `Property_List` and a ReadProperty of every property it lists - every read comes back as a value. |
+| `sensing_test.py` | **The Profile Function.** Reads the three sensors again and again for 12 s; the readings follow the Simulation (0.5 C steps, a toggle every 3 s, states in order). Fails against a sensor that serves constants. |
+| `failure_modes_test.py` | **The Failure Modes.** Breaks the simulated sensor wire: `Reliability` `open-loop`, `Status_Flags` FAULT, a frozen reading; repairs it: all clear, the reading moves. Then the errors for an unknown object / property / array index, and the Reject for a WriteProperty. |
+
+Build (`npm install && npm run build`), then run them all:
+
+```bash
+python3 tests/run_wire_tests.py                 # Linux/macOS: starts "node dist/main.js"
+python tests\run_wire_tests.py --port 47821     # Windows
+```
+
+It ends with `ALL WIRE TESTS PASSED` (exit 0). `--exe "<command>"` starts the
+example some other way (e.g. `--exe "npx tsx main.ts"`).
+[tests/README.md](tests/README.md) says what each check proves.
 
 ## The BACnet profile example series
 

@@ -21,7 +21,7 @@ older pin.
 | File | What it is |
 |---|---|
 | `SimpleUDP.ts` | The UDP socket the application owns: bind, queue inbound datagrams, send. The stack never touches the socket - it pulls datagrams through the receive callback. |
-| `CASExampleHelper.ts` | `RegisterCommonCallbacks()` (receive/send/system-time + the 6-byte IPv4 connection string, port big-endian, written here ONCE), `SendIAm()`, `GetLocalIPv4()`, and CLI helpers. |
+| `CASExampleHelper.ts` | `RegisterCommonCallbacks()` (receive/send/system-time + the 6-byte IPv4 connection string, port big-endian, written here ONCE; one `RX`/`TX` console line per frame), `SendIAm()`, `DiscoverPrimaryIPv4()` / `GetLocalIPv4()`, the CLI helpers, `PrintVersion()` / `PrintHelp()`, and the interactive keys (`StartKeyInput()`). |
 | `CASBACnetStackExampleConstants.ts` | The handful of BACnet enumeration values this example uses - same constant names as the C++ edition's header, so the two languages diff 1:1. |
 
 ## How main.ts uses it
@@ -29,10 +29,12 @@ older pin.
 ```ts
 const udp = new SimpleUDP();
 await udp.Setup(port);
+await DiscoverPrimaryIPv4();                           // before GetLocalIPv4()
 RegisterCommonCallbacks(udp, NETWORK_PORT_INSTANCE);   // before AddDevice
 // ... AddDevice, objects, services ...
 SendIAm(deviceInstance, port, NETWORK_PORT_INSTANCE);  // announce on start-up
 setInterval(() => { while (BACnetStack_Tick()) {} }, 10);
+StartKeyInput((key) => { /* h, q, up, down */ });
 ```
 
 Unlike the B-ASC-Node edition of this file, there is no `RestartKind`/

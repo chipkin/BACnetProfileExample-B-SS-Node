@@ -9,9 +9,12 @@ Guidance for AI coding agents working in this repository. See
 A **tutorial** Node.js/TypeScript example that implements the BACnet
 **B-SS** (Smart Sensor) profile using the CAS BACnet Stack's npm package: a
 complete minimal, **read-only** BACnet/IP device (DS-RP-B, DM-DDB-B,
-DM-DOB-B). Part of the BACnet profile example series - the C++ sibling is
-BACnetProfileExample-B-SS-CPP, and the two are kept diffable: same objects,
-names, section layout, and `BACnetStack_*` function names. The top priority
+DM-DOB-B) whose readings follow a sensor **Simulation** and which reports a
+broken sensor as a fault. Part of the BACnet profile example series - it is a
+faithful translation of BACnetProfileExample-B-SS-CPP (v1.3.0,
+branch `profile-functional`): same objects, names, Simulation, test-only hooks,
+section layout and `BACnetStack_*` function names, and the same Wire Tests
+pass against both. The top priority
 is that the code reads like a tutorial a customer can learn from and
 copy-paste. Favour clarity over cleverness.
 
@@ -19,9 +22,14 @@ copy-paste. Favour clarity over cleverness.
 
 This repository is self-contained:
 
-- `main.ts` - the whole application, three numbered sections (§1
-  configuration, §2 get callbacks, §3 main). There is no §2b/§2c - a B-SS
-  registers no `Set*` callback and no `DeviceCommunicationControl` handler.
+- `main.ts` - the whole application, four numbered sections like the C++
+  `main.cpp` (§1 configuration, §2 the sensor Simulation, §3 get callbacks,
+  §4 main). A B-SS registers no `Set*` callback and no
+  `DeviceCommunicationControl` handler.
+- `tests/` - the Wire Tests, copied from B-SS-CPP; `tests/launch.py` is the
+  only addition (`--exe` takes a command line, default `node dist/main.js`).
+- `wiretest/` - the series' shared Python Wiretest Harness, vendored
+  **verbatim** (0.7.0). Never edit it here; report a needed change instead.
 - `common/` - the shared Node.js helper (SimpleUDP, CASExampleHelper,
   constants), vendored in. Never edit here alone: a change must be swept to
   every sibling Node example and `COMMON_VERSION` bumped with a
@@ -36,8 +44,9 @@ This repository is self-contained:
 - `docs/objects.json` - the input to that generator. Update it in the same
   change as any `main.ts` change that adds an object or a `Get*` branch.
 - `submodules/cas-bacnet-stack` - the **CAS BACnet Stack** as a git submodule
-  (private; tracks `6.x`), consumed via **npm workspaces**. Do not bump the
-  pin in one example alone. After cloning, run
+  (private; pinned to `6.x` @ `64b2cfac5`, stack 6.0.23), consumed via **npm
+  workspaces**. Per the series ADR 0001, the pin moves to the latest `6.x`
+  whenever this example is updated. After cloning, run
   `git submodule update --init --recursive`.
 
 The `PROFILE-TABLE` block in README.md is also generated, from the
@@ -52,14 +61,19 @@ one command, identical on every platform:
 ```bash
 git submodule update --init --recursive   # once, if not cloned with --recursive
 npm install                               # compiles the CAS BACnet Stack addon
-                                           # (node-gyp, 10-20 min first time) and
-                                           # builds the package's dist/ via its
-                                           # prepare script
+                                          # (node-gyp, ~3 min) and builds the
+                                          # package's dist/ via its prepare script
+npm run build                             # tsc: main.ts + common/ -> dist/
 ```
 
-Windows needs Visual Studio 2022 Build Tools ("Desktop development with C++")
-plus Python (the standard node-gyp prerequisites) and a short project path;
-Linux/macOS need a C++17 toolchain. Do not reintroduce a CMake invocation, a
+Node **24.21+ (<25)** with its own npm 11 - the stack's package `engines`.
+`.npmrc` sets `bacnet_testtool=0`: the addon is the stack's **production**
+build (customer interface only). Never remove it, and never call a test-tool
+export. npm warns `Unknown project config "bacnet_testtool"` on every run; that
+is expected. Windows needs Visual Studio (2022 or 2026) with "Desktop
+development with C++" plus Python and a short project path; Linux/macOS need a
+C++17 toolchain. The addon is built from the pinned submodule, never pulled
+from a registry. Do not reintroduce a CMake invocation, a
 prebuilt-library step, or a series-root build script into the documented
 build: a customer downloads this repository on its own and must be able to
 build it with the command above.
@@ -67,12 +81,12 @@ build it with the command above.
 ## Run
 
 ```bash
-npm start [-- --port 47821 --deviceID N]   # run
+npm start [-- --port 47821 --deviceID N]   # run (node dist/main.js)
 npm run typecheck                          # tsc --noEmit
 ```
 
-Interactive keys while running: `h` help, `q` quit, up/down nudge Analog
-Input 1.
+Interactive keys while running: `h` help, `q` quit, up/down nudge the
+simulated Analog Input 1 reading. With stdin a pipe, writing `q` quits.
 
 ## Conventions
 
@@ -80,6 +94,14 @@ Input 1.
   389.
 - Implement **only** the services and objects the B-SS profile requires -
   but expose **every required property** of each object.
+- The sensor readings come from the **Simulation** in `main.ts` section 2
+  (`SensorSimulationTick()`); it is outside the BACnet Surface and labelled so
+  in the README. Its broken-wire hook is test-only
+  (`CAS_EXAMPLE_TEST_SENSOR_FAULT_FILE`, an environment variable) - never a
+  command-line option or a menu key.
+- **Behaviour follows B-SS-CPP.** A change to the device's behaviour starts in
+  the C++ reference; this port follows it so the shared Wire Tests keep passing
+  against both.
 - **This device is read-only.** There is no `RegisterCallbackSetProperty*`
   call and no `SERVICE_WRITE_PROPERTY` anywhere in `main.ts`; do not add
   Set-side plumbing here - that belongs in a different profile example
@@ -108,17 +130,20 @@ Input 1.
 
 ## How to verify a change
 
-There are no unit tests; verification is behavioural:
+The Wire Tests in `tests/` automate this (README "Wire Tests"): discovery, the
+readings following the Simulation, and the Failure Modes -
+`npm run build && python tests/run_wire_tests.py --port <free port>`. Run them
+after any change; they end with `ALL WIRE TESTS PASSED`. A new check must fail
+with its feature removed (tests/README.md has the mutation table). Beyond them:
 
 1. `npm run typecheck`.
-2. Smoke: `npm start -- --port 47821` stays up past the ready banner (every
-   failed setup call exits 1, so "still running" proves registration).
-3. Read back what you changed with a BACnet client (Who-Is, ReadProperty of
+2. Read back what you changed with a BACnet client (Who-Is, ReadProperty of
    every required property; confirm a WriteProperty is rejected).
-4. If you changed the objects or their properties, regenerate
+3. If you changed the objects or their properties, regenerate
    `docs/PICS.md` (`python tools/gen-objects-properties.py
-   BACnetProfileExample-B-SS-Node` from the series root) and confirm no row
-   comes out flagged with ⚠.
+   BACnetProfileExample-B-SS-Node` from the series root; it writes `main.cpp`
+   in the objects-table intro - change that word back to `main.ts`) and
+   confirm no row comes out flagged with ⚠.
 
 ## Releasing
 

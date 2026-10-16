@@ -3,6 +3,53 @@
 All notable changes to the vendored Node.js `common/` helpers. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [3.0.0] - 2026-10-16
+
+Brings the Node `common/` in line with the conventions of the C++ `common/`
+3.4.0 (BACnetProfileExample-B-SS-CPP v1.3.0), for stack `6.x` @ `64b2cfac5`.
+Breaking: `SimpleUDP.Send()` now returns the byte count, and the CLI parsers
+warn and fall back instead of exiting.
+
+### Added
+
+- **RX/TX console lines.** Every frame received or sent prints one line,
+  `RX <n> bytes from <ip>:<port> (Network Port <n>) - <summary>` /
+  `TX <n> bytes to <ip>:<port>[ (broadcast)] (Network Port <n>) - <summary>`,
+  the same shape as the C++ `common/`. `SummarizeBacnetFrame()` names the PDU
+  type and service (and the Reject/Abort reason); unlike the C++ edition it does
+  not add the object/property or route suffix, and there is no `--xml` dump.
+- `DiscoverPrimaryIPv4()`: finds the interface that carries the default route
+  (a connected UDP socket toward TEST-NET-1, which sends nothing), so
+  `GetLocalIPv4()` no longer picks a virtual switch adapter on Windows.
+- `PrintHelp()` (the `h` key), `KeyCommand` + `StartKeyInput()` (the
+  interactive keys; with stdin a pipe the same characters work, so writing `q`
+  quits - how the Wire Tests stop an example), `ParseDccPasswordArg()`.
+- `HandleHelpAndVersionArgs(..., showDccPasswordCliOption = true)` - as the C++
+  helper; pass `false` from an example without DeviceCommunicationControl.
+- `SimpleUDP.onDatagramQueued` (run the stack as soon as a request arrives) and
+  `SimpleUDP.Port()`.
+- More constants (object types, services, DCC, ReinitializeDevice, notify type,
+  error codes, network number quality), names matching the C++ header.
+
+### Changed
+
+- The send callback follows the C++ 3.2.0 / 3.4.0 broadcast rules: a length-0
+  connection string means "broadcast on this link" (the local subnet broadcast
+  on this socket's port); `broadcast = true` addressed to this socket's own
+  address goes to the subnet broadcast (stack #3933); a send for another
+  Network Port instance is declined.
+- A received datagram larger than the stack's buffer is truncated to it (as the
+  C++ `SimpleUDP` does) instead of dropped.
+- `SimpleUDP.Send()` copies the message first (the stack reuses its outgoing
+  buffer; dgram sends asynchronously) and returns the byte count.
+- `SimpleUDP.Setup()` binds without `SO_REUSEADDR` on Windows, so a second
+  device on the same port fails to bind instead of silently sharing it.
+- `PrintVersion()` prints the C++ three-line banner (`CAS BACnet Stack
+  version: ...`, `Common helper (common/) version: ...`).
+- `ParsePortArg()` / `ParseDeviceIdArg()` take whole numbers only, and on a bad
+  value print `Warning: ignoring invalid ...` and use the default (the C++
+  behaviour) instead of exiting.
+
 ## [2.0.0] - 2026-09-16
 
 ### Added

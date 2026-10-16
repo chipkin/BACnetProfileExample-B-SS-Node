@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - unreleased
+
+Profile-functional (series bar): a faithful port of
+`BACnetProfileExample-B-SS-CPP` v1.3.0. The sensor performs the B-SS Profile
+Function - ANSI/ASHRAE 135-2024 Annex L.4.5, "Ability to provide values for any
+of its BACnet objects upon request" - with readings that change, and shows a
+Failure Mode. The BACnet Surface is unchanged (DS-RP-B, DM-DDB-B, DM-DOB-B; the
+same five objects).
+
+### Added
+
+- **Sensor Simulation** (`main.ts` section 2, `SensorSimulationTick()`,
+  labelled Simulation in the README): once a second Analog Input 1 moves 0.5 C
+  between 18.0 and 26.0, Binary Input 1 toggles every 3 s, Multi-State Input 1
+  steps 1 -> 2 -> 3 -> 1 every 4 s. Before, all three were constants (Analog
+  Input 1 changed only on an arrow key).
+- **Analog Input 1 `Reliability`** (optional property, now enabled):
+  `no-fault-detected`, or `open-loop` while the simulated sensor wire is
+  broken; the stack derives the FAULT bit of `Status_Flags` from it (cl. 12.2.7,
+  12.2.9). While broken the reading freezes. Test-only hook: the environment
+  variable `CAS_EXAMPLE_TEST_SENSOR_FAULT_FILE` names a file, and the wire is
+  broken while that file exists.
+- **Wire Tests** (`tests/`, copied from the C++ reference) and the shared
+  `wiretest/` 0.7.0 harness, vendored verbatim. The only addition is
+  `tests/launch.py`: `--exe` takes a command line, default
+  `node dist/main.js`. Windows, 3 runs in a row: 36/36 checks each (discovery
+  11/11, sensing 11/11, failure modes 14/14), no `[RETRY]` lines.
+  Mutation-checked: removing the Simulation tick, the wire break, the
+  Reliability branch, or the multi-state step each fails a check.
+- `.npmrc` `bacnet_testtool=0`: `npm install` builds the stack's production
+  addon (customer interface only).
+- `npm run build` (tsc to `dist/`); `npm start` runs `node dist/main.js`.
+
+### Changed
+
+- **Stack Pin** `6.x` @ `ec60c718` -> `6.x` @ `64b2cfac5` (CAS BACnet Stack
+  6.0.23, Node package 6.1.2), consumed in place as an npm workspace.
+  **Protocol_Revision 24 -> 30**; segmentation `segmented-both`
+  (`Max_Segments_Accepted` 16, `APDU_Segment_Timeout` 5000 ms), from the stack.
+- **Node.js 24.21+ (<25)**, the stack package's `engines` (was `>=18.20.8`);
+  `tsx` is gone.
+- `common/` 2.0.0 -> 3.0.0 (see `common/CHANGELOG.md`): the C++ `common/` 3.4.0
+  conventions - RX/TX console lines, the broadcast rules of the send callback,
+  primary-interface discovery, the three-line version banner, the interactive
+  keys (also read from a piped stdin, which is how the Wire Tests stop the
+  example), and CLI parsing that warns instead of exiting.
+- The up/down keys nudge the simulated Analog Input 1 reading; the Simulation
+  carries on from the new value.
+- `.gitignore` covers every stack binary name (`*.node`, `*.dll`, `*.so`, ...);
+  the release workflow publishes source only, never the addon.
+- README: the scenario, the Simulation, Wire Tests, the version line, the
+  binary-never-released rule; TUTORIAL: replacing the Simulation with hardware
+  and reporting a sensor fault; PICS: Reliability row, segmentation,
+  Protocol_Revision 30, Application_Software_Version 1.1.0. APP_VERSION
+  1.0.2 -> 1.1.0.
+
 ## [1.0.2] - unreleased
 
 ### Changed
