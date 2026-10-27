@@ -67,8 +67,8 @@ def parser(description):
     arguments = argparse.ArgumentParser(description=description, formatter_class=argparse.RawDescriptionHelpFormatter)
     arguments.add_argument("--exe", default=launch.default_command(),
                            help="the command that starts the example (default: node dist/main.js)")
-    arguments.add_argument("--port", type=int, default=47821,
-                           help="the smart sensor's UDP port (default 47821)")
+    arguments.add_argument("--port", type=int, default=47823,
+                           help="the smart sensor's UDP port (default 47823)")
     return arguments
 
 

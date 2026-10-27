@@ -44,7 +44,7 @@ This repository is self-contained:
 - `docs/objects.json` - the input to that generator. Update it in the same
   change as any `main.ts` change that adds an object or a `Get*` branch.
 - `submodules/cas-bacnet-stack` - the **CAS BACnet Stack** as a git submodule
-  (private; pinned to `6.x` @ `64b2cfac5`, stack 6.0.23), consumed via **npm
+  (private; pinned to `6.x` @ `69b6249f`, stack 6.0.23), consumed via **npm
   workspaces**. Per the series ADR 0001, the pin moves to the latest `6.x`
   whenever this example is updated. After cloning, run
   `git submodule update --init --recursive`.
@@ -81,7 +81,7 @@ build it with the command above.
 ## Run
 
 ```bash
-npm start [-- --port 47821 --deviceID N]   # run (node dist/main.js)
+npm start [-- --port 47821 --deviceID N --deviceName "<name>"]   # run (node dist/main.js)
 npm run typecheck                          # tsc --noEmit
 ```
 

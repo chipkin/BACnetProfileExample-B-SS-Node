@@ -3,7 +3,7 @@
 # Public-domain example code (CC0) - see ../LICENSE.
 """Run every B-SS Wire Test, one after another, and report one result.
 
-    python3 tests/run_wire_tests.py [--exe "node dist/main.js"] [--port 47821]
+    python3 tests/run_wire_tests.py [--exe "node dist/main.js"] [--port 47823]
 
 Exit code 0 = every check in every script passed.
 """
@@ -19,14 +19,14 @@ sys.path.insert(0, str(REPOSITORY))
 import wiretest  # noqa: E402  (the vendored harness at the repository root)
 import launch  # noqa: E402  (--exe is a command line - see launch.py)
 
-SCRIPTS = ["discovery_test.py", "sensing_test.py", "failure_modes_test.py"]
+SCRIPTS = ["discovery_test.py", "configuration_test.py", "sensing_test.py", "failure_modes_test.py"]
 
 
 def main():
     arguments = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     arguments.add_argument("--exe", default=launch.default_command(),
                            help="the command that starts the example (default: node dist/main.js)")
-    arguments.add_argument("--port", type=int, default=47821, help="the smart sensor's UDP port (default 47821)")
+    arguments.add_argument("--port", type=int, default=47823, help="the smart sensor's UDP port (default 47823)")
     args = arguments.parse_args()
 
     outcomes = []

@@ -52,7 +52,9 @@ for a sensor that stopped answering.
 **Change the device identity before you ship** - vendor ID, vendor name,
 model name, description, firmware revision and device name are all in the
 `CHANGE ALL OF THIS BEFORE YOU SHIP` block at the top of `main.ts` §1, with a
-per-field note on each saying what to change it to. That block is the
+per-field note on each saying what to change it to. The device name there is
+only the default: each unit takes its own with `--deviceName` at start-up, as
+it takes its instance with `--deviceID`. That block is the
 authoritative checklist; it is in the source rather than here so it cannot be
 skipped by someone who only reads the code. Keep the
 `LoadBACnetFunctions()` guard, the application-owned socket +
